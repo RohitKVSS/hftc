@@ -3,7 +3,7 @@
 from queue import Queue, Empty
 from datetime import datetime
 from src.core.events import MarketEvent
-from src.strategies.dummy_strategy import DummyStrategy
+from src.strategies.dummy_strat import DummyStrategy
 
 
 class SimpleEngine:
