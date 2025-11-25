@@ -23,8 +23,12 @@ class Portfolio:
 
         self.cash = initial_capital
         self.positions = {}  # symbol -> shares
+        self.avg_cost = {}
         self.realized_pnl = 0.0
         self.total_commission = 0.0
+        self.last_prices = {}      # symbol -> last mid/last price
+        self.unrealized_pnl = 0.0
+        self.nav = initial_capital
 
     def on_signal(self, signal: SignalEvent):
         """
@@ -46,34 +50,84 @@ class Portfolio:
 
     def on_fill(self, fill: FillEvent):
         """
-        Update positions and cash after a fill.
+        Update positions, cash, avg cost, and realized PnL after a fill.
         """
         sym = fill.symbol
         qty = fill.quantity
         px = fill.fill_price
         comm = fill.commission
-
+    
         self.total_commission += comm
-
-        # Current position (default 0)
+    
         pos = self.positions.get(sym, 0)
-
+        avg = self.avg_cost.get(sym, 0.0)
+    
         if fill.direction == "BUY":
-            pos += qty
+            # New position after buy
+            new_pos = pos + qty
+    
+            # Update average cost only if position increases
+            if new_pos != 0:
+                # Weighted average price
+                new_avg = (pos * avg + qty * px) / new_pos
+            else:
+                new_avg = 0.0
+    
+            self.positions[sym] = new_pos
+            self.avg_cost[sym] = new_avg
+    
             self.cash -= qty * px + comm
+    
         elif fill.direction == "SELL":
-            pos -= qty
+            new_pos = pos - qty
+    
+            # Realized PnL only happens when you reduce/close a position
+            # We assume you are selling from an existing long.
+            realized = qty * (px - avg)
+            self.realized_pnl += realized
+    
+            self.positions[sym] = new_pos
+    
+            # If position is fully closed, reset avg cost
+            if new_pos == 0:
+                self.avg_cost[sym] = 0.0
+    
             self.cash += qty * px - comm
 
-        self.positions[sym] = pos
+    def mark_to_market(self, symbol: str, price: float):
+        """
+        Update last price and recompute unrealized PnL and NAV (true version).
+        """
+        self.last_prices[symbol] = price
+    
+        unreal = 0.0
+        mkt_value = 0.0
+    
+        for sym, qty in self.positions.items():
+            px = self.last_prices.get(sym)
+            if px is None:
+                continue
+    
+            mkt_value += qty * px
+    
+            avg = self.avg_cost.get(sym, 0.0)
+            # True unrealized pnl:
+            unreal += qty * (px - avg)
+    
+        self.unrealized_pnl = unreal
+        self.nav = self.cash + mkt_value
+
+
 
     def snapshot(self):
-        """
-        Small helper to view current portfolio state.
-        """
         return {
             "cash": self.cash,
             "positions": dict(self.positions),
+            "avg_cost": dict(self.avg_cost),
+            "last_prices": dict(self.last_prices),
+            "unrealized_pnl": self.unrealized_pnl,
             "realized_pnl": self.realized_pnl,
+            "nav": self.nav,
             "total_commission": self.total_commission
         }
+
