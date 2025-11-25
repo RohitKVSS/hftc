@@ -50,6 +50,33 @@ class SimpleEngine:
             return (bid + ask) / 2.0
         return last
 
+    def run_from_datahandler(self, datahandler, max_rows: int = None):
+        """
+        Pulls market rows from a DataHandler and feeds them into the event loop.
+        max_rows: optional cap for demo.
+        """
+        rows = 0
+    
+        while True:
+            row = datahandler.stream_next()
+            if row is None:
+                break
+    
+            self.put_market_event(
+                symbol=row["symbol"],
+                bid=row["bid"],
+                ask=row["ask"],
+                last=row["last"],
+                volume=row["volume"]
+            )
+    
+            # Process whatever events got generated from this market update
+            self.run(max_events=50, max_idle_timeouts=1)
+    
+            rows += 1
+            if max_rows is not None and rows >= max_rows:
+                break
+                
     def run(self, max_events: int = 100, max_idle_timeouts: int = 3):
         self.running = True
         processed = 0
