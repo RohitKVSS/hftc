@@ -29,6 +29,7 @@ class Portfolio:
         self.last_prices = {}      # symbol -> last mid/last price
         self.unrealized_pnl = 0.0
         self.nav = initial_capital
+        self.history = []
 
     def on_signal(self, signal: SignalEvent):
         """
@@ -116,8 +117,25 @@ class Portfolio:
     
         self.unrealized_pnl = unreal
         self.nav = self.cash + mkt_value
+        self.history.append({
+            "timestamp": datetime.utcnow(),
+            "symbol": symbol,
+            "price": price,
+            "cash": self.cash,
+            "positions": dict(self.positions),
+            "avg_cost": dict(self.avg_cost),
+            "unrealized_pnl": self.unrealized_pnl,
+            "realized_pnl": self.realized_pnl,
+            "nav": self.nav,
+            "total_commission": self.total_commission
+        })
 
 
+    def equity_curve(self):
+        """
+        Return list of (timestamp, nav).
+        """
+        return [(h["timestamp"], h["nav"]) for h in self.history]
 
     def snapshot(self):
         return {
