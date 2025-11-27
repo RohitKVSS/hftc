@@ -95,10 +95,7 @@ class Portfolio:
     
             self.cash += qty * px - comm
 
-    def mark_to_market(self, symbol: str, price: float):
-        """
-        Update last price and recompute unrealized PnL and NAV (true version).
-        """
+    def mark_to_market(self, symbol: str, price: float, timestamp):
         self.last_prices[symbol] = price
     
         unreal = 0.0
@@ -112,13 +109,13 @@ class Portfolio:
             mkt_value += qty * px
     
             avg = self.avg_cost.get(sym, 0.0)
-            # True unrealized pnl:
             unreal += qty * (px - avg)
     
         self.unrealized_pnl = unreal
         self.nav = self.cash + mkt_value
+    
         self.history.append({
-            "timestamp": datetime.utcnow(),
+            "timestamp": timestamp,
             "symbol": symbol,
             "price": price,
             "cash": self.cash,
@@ -129,6 +126,7 @@ class Portfolio:
             "nav": self.nav,
             "total_commission": self.total_commission
         })
+
 
 
     def equity_curve(self):
