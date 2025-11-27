@@ -41,19 +41,32 @@ class SimpleEngine:
     # -----------------------
     # Helper: decide fill price
     # -----------------------
-    def _get_fill_price(self, symbol: str):
+    def _get_fill_price(self, order_event):
         """
-        For now, fill market orders at mid price if bid/ask exist,
-        else fall back to last.
+        Realistic market-order fill:
+          - BUY at ask
+          - SELL at bid
+        Falls back to last if bid/ask missing.
         """
+        symbol = order_event.symbol
+        side = getattr(order_event, "direction", None)
+    
         s = self.market_state.get(symbol)
         if s is None:
             return None
-
+    
         bid, ask, last = s.get("bid"), s.get("ask"), s.get("last")
-
+    
+        # If we have a proper book:
         if bid is not None and ask is not None:
+            if side == "BUY":
+                return ask
+            elif side == "SELL":
+                return bid
+            # Fallback: unknown side -> mid
             return (bid + ask) / 2.0
+    
+        # If only last is known:
         return last
 
     # -----------------------
@@ -109,18 +122,19 @@ class SimpleEngine:
 
             # 3) ORDER -> FILL
             elif event.type == "ORDER":
-                fill_px = self._get_fill_price(event.symbol)
+                fill_px = self._get_fill_price(event)
                 if fill_px is None:
                     continue
-
+            
                 fill = self.execution.on_order(event, fill_px)
                 self.events.put(fill)
-
+            
                 print(
                     f"[ORDER]  {event.timestamp} {event.symbol} "
                     f"{event.direction} qty={event.quantity} type={event.order_type} "
                     f"fill_px~{fill_px:.2f}"
                 )
+
 
             # 4) FILL -> portfolio update
             elif event.type == "FILL":

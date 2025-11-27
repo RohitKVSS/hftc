@@ -137,13 +137,14 @@ class Portfolio:
 
     def snapshot(self):
         return {
-            "cash": self.cash,
+            "cash": round(self.cash, 2),
             "positions": dict(self.positions),
-            "avg_cost": dict(self.avg_cost),
-            "last_prices": dict(self.last_prices),
-            "unrealized_pnl": self.unrealized_pnl,
-            "realized_pnl": self.realized_pnl,
-            "nav": self.nav,
-            "total_commission": self.total_commission
+            "avg_cost": {k: round(v, 2) for k, v in self.avg_cost.items()},
+            "last_prices": {k: round(v, 2) for k, v in self.last_prices.items()},
+            "unrealized_pnl": round(self.unrealized_pnl, 2),
+            "realized_pnl": round(self.realized_pnl, 2),
+            "nav": round(self.nav, 2),
+            "total_commission": round(self.total_commission, 2),
         }
+
 
