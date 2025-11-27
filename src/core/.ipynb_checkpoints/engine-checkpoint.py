@@ -139,6 +139,20 @@ class SimpleEngine:
             # 4) FILL -> portfolio update
             elif event.type == "FILL":
                 self.portfolio.on_fill(event)
+                 # 2) immediately mark to market using latest known price
+                mkt = self.market_state.get(event.symbol)
+                if mkt is not None:
+                    bid = mkt.get("bid")
+                    ask = mkt.get("ask")
+                    last = mkt.get("last")
+            
+                    if bid is not None and ask is not None:
+                        mid_px = (bid + ask) / 2.0
+                    else:
+                        mid_px = last
+            
+                    if mid_px is not None:
+                        self.portfolio.mark_to_market(event.symbol, mid_px, event.timestamp)
 
                 print(
                     f"[FILL]   {event.timestamp} {event.symbol} "
@@ -153,33 +167,42 @@ class SimpleEngine:
     # -----------------------
     # DataHandler-driven run
     # -----------------------
-    def run_from_datahandler(self, datahandler, max_rows: int = None):
+    def run_from_datahandler(
+        self,
+        datahandler,
+        max_rows: int = None,
+        engine_max_events: int = 1_000_000,
+        engine_idle_timeouts: int = 3,
+        print_summary: bool = True,
+    ):
         """
-        Stream data row-by-row:
-        For each CSV row:
-          - create a MarketEvent
-          - run the engine just enough to process resulting events
+        Stream data row-by-row from the datahandler and enqueue MarketEvents.
+        After enqueuing (or hitting max_rows), run the engine once to process
+        all events.
         """
         rows = 0
-
+    
         while True:
             row = datahandler.stream_next()
             if row is None:
                 break
-
-            # Put one MarketEvent for this row
+    
             self.put_market_event(
                 symbol=row["symbol"],
                 bid=row["bid"],
                 ask=row["ask"],
                 last=row["last"],
                 volume=row["volume"],
-                timestamp=row["timestamp"]
+                timestamp=row["timestamp"],
             )
-
-            # Process all events generated from this MarketEvent
-            self.run(max_events=1000, max_idle_timeouts=1, print_summary=False)
-
+    
             rows += 1
             if max_rows is not None and rows >= max_rows:
                 break
+    
+        # Now process everything in one go
+        self.run(
+            max_events=engine_max_events,
+            max_idle_timeouts=engine_idle_timeouts,
+            print_summary=print_summary,
+        )

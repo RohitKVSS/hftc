@@ -17,7 +17,7 @@ class Portfolio:
     - inventory targets
     """
 
-    def __init__(self, base_quantity: int = 10, initial_capital: float = 1_000_000):
+    def __init__(self, base_quantity: int = 10, initial_capital: float = 1_000_000,max_shares_per_symbol: int = 500,):
         self.base_quantity = base_quantity
         self.initial_capital = initial_capital
 
@@ -30,24 +30,57 @@ class Portfolio:
         self.unrealized_pnl = 0.0
         self.nav = initial_capital
         self.history = []
+        self.max_shares_per_symbol = max_shares_per_symbol
+
 
     def on_signal(self, signal: SignalEvent):
-        """
-        Convert SignalEvent into OrderEvent.
-        """
-        if signal.signal_type not in ["BUY", "SELL"]:
+        symbol = signal.symbol
+        side = signal.signal_type  # "BUY" or "SELL"
+        current_pos = self.positions.get(symbol, 0)
+        price = self.last_prices.get(symbol)
+
+        if price is None:
+            # No price known yet
             return None
 
-        qty = int(self.base_quantity * signal.strength)
+        if side == "BUY":
+            # target position after this order (capped)
+            desired_pos = min(
+                current_pos + self.base_quantity,
+                self.max_shares_per_symbol,
+            )
+            qty = desired_pos - current_pos
+            if qty <= 0:
+                return None
 
-        order = OrderEvent(
-            symbol=signal.symbol,
-            timestamp=datetime.utcnow(),
-            order_type="MKT",
-            direction=signal.signal_type,
-            quantity=qty
-        )
-        return order
+            est_cost = qty * price
+            if est_cost > self.cash:
+                # not enough cash – skip
+                return None
+
+            return OrderEvent(
+                symbol=symbol,
+                timestamp=signal.timestamp,
+                direction="BUY",
+                quantity=qty,
+                order_type="MKT",
+            )
+
+        elif side == "SELL":
+            # only sell up to what we own (no naked short)
+            qty = min(self.base_quantity, current_pos)
+            if qty <= 0:
+                return None
+
+            return OrderEvent(
+                symbol=symbol,
+                timestamp=signal.timestamp,
+                direction="SELL",
+                quantity=qty,
+                order_type="MKT",
+            )
+
+        return None
 
     def on_fill(self, fill: FillEvent):
         """

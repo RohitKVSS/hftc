@@ -1,32 +1,26 @@
+# src/strategies/dummy_strat.py
+
 from src.core.events import SignalEvent
 from src.strategies.indicators import RollingSMA, EMA
 
 
 class DummyStrategy:
     """
-    SMA/EMA crossover strategy:
+    SMA/EMA crossover strategy with state:
 
-    - Maintains per-symbol SMA and EMA.
-    - BUY when EMA > SMA and currently flat.
-    - SELL when EMA < SMA and currently long.
-    - Ignores signals until SMA is "warmed up" (enough data).
+    - Keeps per-symbol SMA and EMA.
+    - BUY once when EMA crosses above SMA (FLAT -> LONG).
+    - SELL once when EMA crosses below SMA (LONG -> FLAT).
     """
 
-    def __init__(
-        self,
-        portfolio,
-        sma_window: int = 20,
-        ema_period: int = 10,
-    ):
+    def __init__(self, portfolio, sma_window: int = 20, ema_period: int = 10):
         self.portfolio = portfolio
-
-        # indicator settings
         self.sma_window = sma_window
         self.ema_period = ema_period
 
-        # indicators per symbol
-        self.sma = {}  # symbol -> RollingSMA
-        self.ema = {}  # symbol -> EMA
+        self.sma = {}           # symbol -> RollingSMA
+        self.ema = {}           # symbol -> EMA
+        self.state = {}         # symbol -> "FLAT" or "LONG"
 
     def _price(self, event):
         price = event.last
@@ -47,33 +41,39 @@ class DummyStrategy:
         if price is None:
             return None
 
-        # --- update indicators ---
         sma_obj, ema_obj = self._get_indicators(symbol)
         sma_val = sma_obj.update(price)
         ema_val = ema_obj.update(price)
 
-        # Need both indicators and a *full* SMA window before we trade
+        # wait until SMA is fully "warmed up"
         if sma_val is None or ema_val is None:
             return None
 
+        prev_state = self.state.get(symbol, "FLAT")
         pos = self.portfolio.positions.get(symbol, 0)
 
-        # ENTRY: flat -> long when fast EMA > slow SMA
-        if pos == 0 and ema_val > sma_val:
-            return SignalEvent(
-                symbol=symbol,
-                timestamp=event.timestamp,
-                signal_type="BUY",
-                strength=1.0,
-            )
+        # CROSS UP: FLAT -> LONG
+        if ema_val > sma_val and prev_state != "LONG":
+            self.state[symbol] = "LONG"
 
-        # EXIT: long -> flat when fast EMA < slow SMA
-        if pos > 0 and ema_val < sma_val:
-            return SignalEvent(
-                symbol=symbol,
-                timestamp=event.timestamp,
-                signal_type="SELL",
-                strength=1.0,
-            )
+            if pos <= 0:  # only enter if not already long
+                return SignalEvent(
+                    symbol=symbol,
+                    timestamp=event.timestamp,
+                    signal_type="BUY",
+                    strength=1.0,
+                )
+
+        # CROSS DOWN: LONG -> FLAT
+        if ema_val < sma_val and prev_state != "FLAT":
+            self.state[symbol] = "FLAT"
+
+            if pos > 0:  # only exit if currently long
+                return SignalEvent(
+                    symbol=symbol,
+                    timestamp=event.timestamp,
+                    signal_type="SELL",
+                    strength=1.0,
+                )
 
         return None
